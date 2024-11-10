@@ -1,16 +1,15 @@
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using System.Diagnostics;
 using Vertizens.TypeMapper.Tests.TestTypes;
 using Xunit.Abstractions;
 
 namespace Vertizens.TypeMapper.Tests;
-
-public class NameMatchTypeMapperTests
+public class NameMatchTypeProjectorTests
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ITestOutputHelper _output;
 
-    public NameMatchTypeMapperTests(ITestOutputHelper output)
+    public NameMatchTypeProjectorTests(ITestOutputHelper output)
     {
         var services = new ServiceCollection().AddTypeMappers();
         _serviceProvider = services.BuildServiceProvider();
@@ -20,12 +19,11 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestStringPropertyValue()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<StringProperty1, StringProperty2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<StringProperty1, StringProperty2>>();
 
         var source = new StringProperty1 { Name = "Test1" };
-        var target = new StringProperty2();
 
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(source.Name == target.Name);
     }
@@ -33,12 +31,11 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestMismatchedStringNullabilityPropertyValue()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<StringNullableProperty1, StringProperty2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<StringNullableProperty1, StringProperty2>>();
 
         var source = new StringNullableProperty1 { Name = "Test1" };
-        var target = new StringProperty2();
 
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(source.Name == target.Name);
     }
@@ -46,12 +43,11 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestMismatchedStringNullabilityPropertyNull()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<StringNullableProperty1, StringProperty2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<StringNullableProperty1, StringProperty2>>();
 
         var source = new StringNullableProperty1 { Name = null };
-        var target = new StringProperty2();
 
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.Name == null);
     }
@@ -59,12 +55,11 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestMismatchedStringClassProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<StringProperty1, ClassNameProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<StringProperty1, ClassNameProperty1>>();
 
         var source = new StringProperty1 { Name = "Test1" };
-        var target = new ClassNameProperty1();
 
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.NestedParent == null);
     }
@@ -72,7 +67,7 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestMultipleProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<MultipleProperty1, MultipleProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<MultipleProperty1, MultipleProperty1>>();
 
         var source = new MultipleProperty1
         {
@@ -82,9 +77,7 @@ public class NameMatchTypeMapperTests
             SomeDecimal = 324.43m,
             SomeInt = 42
         };
-        var target = new MultipleProperty1();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(source.FirstName == target.FirstName);
         Assert.True(source.LastName == target.LastName);
@@ -96,15 +89,13 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestMultiplePropertyMismatchedNullability()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<MultipleProperty2, MultipleProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<MultipleProperty2, MultipleProperty1>>();
 
         var source = new MultipleProperty2
         {
             SomeDecimal = 324.43m
         };
-        var target = new MultipleProperty1();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(source.FirstName == target.FirstName);
         Assert.True(source.LastName == target.LastName);
@@ -116,16 +107,15 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestNestedChildPropertyAsClass()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<NestedParent1, NestedParent2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<NestedParent1, NestedParent2>>();
 
         var source = new NestedParent1
         {
             ParentId = 3,
             Child1 = new NestedChild1 { ChildId = 4 }
         };
-        var target = new NestedParent2();
 
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(source.ParentId == target.ParentId);
         Assert.True(target.Child1 != null);
@@ -135,15 +125,13 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestStringEnumerableToListProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<IEnumerableProperty1, IListProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<IEnumerableProperty1, IListProperty1>>();
 
         var source = new IEnumerableProperty1
         {
             List1 = ["test1", "test2"]
         };
-        var target = new IListProperty1();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.List1 == null);
     }
@@ -151,15 +139,13 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestStringListToEnumerableProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<IListProperty1, IEnumerableProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<IListProperty1, IEnumerableProperty1>>();
 
         var source = new IListProperty1
         {
             List1 = ["test1", "test2"]
         };
-        var target = new IEnumerableProperty1();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.List1 != null);
         Assert.Equal(source.List1, target.List1);
@@ -168,15 +154,13 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestStringArrayToListProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<ArrayProperty1, IListProperty1>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<ArrayProperty1, IListProperty1>>();
 
         var source = new ArrayProperty1
         {
             List1 = ["test1", "test2"]
         };
-        var target = new IListProperty1();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.List1 != null);
         Assert.Equal(source.List1, target.List1);
@@ -185,15 +169,13 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestClassListToListProperty()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<IListClassProperty1, IListClassProperty2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<IListClassProperty1, IListClassProperty2>>();
 
         var source = new IListClassProperty1
         {
             List1 = [new NestedParent1 { ParentId = 2, Child1 = new NestedChild1 { ChildId = 4 } }]
         };
-        var target = new IListClassProperty2();
-
-        mapper.Map(source, target);
+        var target = projector.GetProjection().Compile()(source);
 
         Assert.True(target.List1 != null);
 
@@ -207,23 +189,22 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestNestedListPerformance()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<IListClassProperty1, IListClassProperty2>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<IListClassProperty1, IListClassProperty2>>();
 
         var source = new IListClassProperty1
         {
             List1 = [new NestedParent1 { ParentId = 2, Child1 = new NestedChild1 { ChildId = 4 } }]
         };
 
-        var target = new IListClassProperty2();
-        mapper.Map(source, target);
+        var projection = projector.GetProjection().Compile();
+        var target = projection(source);
 
         var iterationCount = 1000000;
         var stopwatch = Stopwatch.StartNew();
 
         for (var i = 0; i < iterationCount; i++)
         {
-            target = new IListClassProperty2();
-            mapper.Map(source, target);
+            target = projection(source);
         }
 
         stopwatch.Stop();
@@ -242,7 +223,7 @@ public class NameMatchTypeMapperTests
     [Fact]
     public void TestSimplePerformance()
     {
-        var mapper = _serviceProvider.GetRequiredService<INameMatchTypeMapper<Product, ProductDto>>();
+        var projector = _serviceProvider.GetRequiredService<ITypeProjector<Product, ProductDto>>();
 
         var source = new Product
         {
@@ -253,16 +234,15 @@ public class NameMatchTypeMapperTests
             StockQuantity = 12
         };
 
-        var target = new ProductDto();
-        mapper.Map(source, target);
+        var projection = projector.GetProjection().Compile();
+        var target = projection(source);
 
         var iterationCount = 1000000;
         var stopwatch = Stopwatch.StartNew();
 
         for (var i = 0; i < iterationCount; i++)
         {
-            target = new ProductDto();
-            mapper.Map(source, target);
+            target = projection(source);
         }
 
         stopwatch.Stop();

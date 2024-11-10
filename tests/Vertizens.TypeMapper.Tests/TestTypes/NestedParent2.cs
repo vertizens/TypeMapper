@@ -1,4 +1,6 @@
-﻿namespace Vertizens.TypeMapper.Tests;
+﻿#nullable disable
+
+namespace Vertizens.TypeMapper.Tests;
 internal class NestedParent2
 {
     public int ParentId { get; set; }

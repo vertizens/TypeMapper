@@ -10,6 +10,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<ITypeMapper, TypeMapper>();
         services.TryAddSingleton(typeof(INameMatchTypeMapper<,>), typeof(NameMatchTypeMapper<,>));
         services.TryAddSingleton(typeof(ITypeMapper<,>), typeof(NameMatchTypeMapper<,>));
+        services.TryAddSingleton(typeof(INameMatchTypeProjector<,>), typeof(NameMatchTypeProjector<,>));
+        services.TryAddSingleton(typeof(ITypeProjector<,>), typeof(NameMatchTypeProjector<,>));
 
         RegisterTypeMappers(services, Assembly.GetCallingAssembly());
 

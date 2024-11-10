@@ -1,4 +1,6 @@
-﻿namespace Vertizens.TypeMapper.Tests;
+﻿#nullable disable
+
+namespace Vertizens.TypeMapper.Tests;
 internal class MultipleProperty2
 {
     public string FirstName { get; set; }

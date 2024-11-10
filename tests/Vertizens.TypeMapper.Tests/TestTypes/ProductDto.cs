@@ -1,4 +1,6 @@
-﻿namespace Vertizens.TypeMapper.Tests.TestTypes;
+﻿#nullable disable
+
+namespace Vertizens.TypeMapper.Tests.TestTypes;
 internal class ProductDto
 {
     public int ProductId { get; set; }

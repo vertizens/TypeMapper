@@ -1,46 +1,14 @@
-﻿using System.Collections;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System.Collections;
 using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Vertizens.TypeMapper;
-internal class NameMatchTypeMapper<TSource, TTarget> : INameMatchTypeMapper<TSource, TTarget>
+internal class NameMatchTypeMapper<TSource, TTarget>(
+    IServiceProvider serviceProvider
+    ) : INameMatchTypeMapper<TSource, TTarget>
 {
-    private readonly IServiceProvider _serviceProvider;
-    private readonly IList<AssignablePropertyContext> _assignablePropertyContexts = [];
-    private readonly IList<ClassPropertyContext> _classPropertyContexts = [];
-    private readonly IList<GenericEnumerablePropertyContext> _genericEnumerablePropertyContexts = [];
-
-    private class AssignablePropertyContext
-    {
-        public required PropertyInfo TargetSet;
-        public required PropertyInfo SourceGet;
-        public required Action<TSource, TTarget> SetAction;
-    }
-
-    private class ClassPropertyContext
-    {
-        public required PropertyInfo TargetSet;
-        public required PropertyInfo SourceGet;
-        public required object TypeMapper;
-        public required MethodInfo MapMethod;
-    }
-
-    private class GenericEnumerablePropertyContext
-    {
-        public required PropertyInfo TargetSet;
-        public required PropertyInfo SourceGet;
-        public required object TypeMapper;
-        public required MethodInfo MapMethod;
-        public required Type TargetGenericType;
-        public required Type TargetGenericListType;
-        public required MethodInfo ListAddMethod;
-    }
-
-    public NameMatchTypeMapper(IServiceProvider serviceProvider)
-    {
-        _serviceProvider = serviceProvider;
-        BuildPropertyContexts();
-    }
+    private readonly Action<TSource, TTarget> _action = BuildAction(serviceProvider);
 
     public void Map(TSource sourceObject, TTarget targetObject)
     {
@@ -54,57 +22,96 @@ internal class NameMatchTypeMapper<TSource, TTarget> : INameMatchTypeMapper<TSou
             throw new ArgumentNullException(nameof(targetObject));
         }
 
-        foreach (var assignablePropertyContext in _assignablePropertyContexts)
-        {
-            assignablePropertyContext.SetAction(sourceObject, targetObject);
-        }
-
-        foreach (var classPropertyContext in _classPropertyContexts)
-        {
-            MapClassProperty(sourceObject, targetObject, classPropertyContext);
-        }
-
-        foreach (var genericEnumerablePropertyContext in _genericEnumerablePropertyContexts)
-        {
-            MapGenericEnumerableProperty(sourceObject, targetObject, genericEnumerablePropertyContext);
-        }
+        _action(sourceObject, targetObject);
     }
 
-    private void BuildPropertyContexts()
+    private static Action<TSource, TTarget> BuildAction(IServiceProvider serviceProvider)
     {
-        var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
-        var targetSetProperties = typeof(TTarget).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.SetMethod?.IsPublic == true).ToDictionary(x => x.Name);
-        foreach (var sourceGetProperty in sourceGetProperties)
+        var projectorExpressionsMethod = typeof(NameMatchTypeMapper<TSource, TTarget>).GetMethod(nameof(GetProjectorExpressions), BindingFlags.NonPublic | BindingFlags.Static);
+        projectorExpressionsMethod = projectorExpressionsMethod!.MakeGenericMethod(typeof(TSource), typeof(TTarget));
+
+        var parameterSource = Expression.Parameter(typeof(TSource), "source");
+        var parameterTarget = Expression.Parameter(typeof(TTarget), "target");
+        var expressions = (IList<Expression>?)projectorExpressionsMethod!.Invoke(null, [parameterSource, parameterTarget, serviceProvider]);
+
+        if (expressions == null)
         {
-            if (targetSetProperties.TryGetValue(sourceGetProperty.Name, out var targetSetProperty))
+            var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
+            var targetSetProperties = typeof(TTarget).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.SetMethod?.IsPublic == true).ToDictionary(x => x.Name);
+
+            expressions = [];
+            foreach (var sourceGetProperty in sourceGetProperties)
             {
-                BuildPropertyContext(sourceGetProperty, targetSetProperty);
+                if (targetSetProperties.TryGetValue(sourceGetProperty.Name, out var targetSetProperty))
+                {
+                    var propertyExpression = BuildPropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty, serviceProvider);
+                    if (propertyExpression != null)
+                    {
+                        expressions.Add(propertyExpression);
+                    }
+                }
             }
         }
+
+        var allPropertyExpressions = Expression.Block(expressions);
+        var expression = Expression.Lambda<Action<TSource, TTarget>>(allPropertyExpressions, parameterSource, parameterTarget);
+        return expression.Compile();
     }
 
-    private void BuildPropertyContext(PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
+    private static IList<Expression>? GetProjectorExpressions<TProjectorSource, TProjectorTarget>(ParameterExpression parameterSource, ParameterExpression parameterTarget, IServiceProvider serviceProvider)
+        where TProjectorTarget : class, new()
     {
+        IList<Expression>? expressions = null;
+        var constructor = typeof(TTarget).GetConstructor(BindingFlags.Public | BindingFlags.Instance, []);
+        if (constructor != null)
+        {
+            var typeProjector = serviceProvider.GetService<ITypeProjector<TProjectorSource, TProjectorTarget>>();
+            if (typeProjector != null)
+            {
+                var projection = typeProjector.GetProjection();
+                if (projection.Body.NodeType == ExpressionType.MemberInit)
+                {
+                    expressions = [];
+                    var bindings = ((MemberInitExpression)projection.Body).Bindings;
+                    foreach (var binding in bindings)
+                    {
+                        var targetProperty = Expression.MakeMemberAccess(parameterTarget, binding.Member);
+                        if (binding.BindingType == MemberBindingType.Assignment)
+                        {
+                            var memberExpression = ((MemberAssignment)binding).Expression;
+                            memberExpression = ReplaceParameterExpressionVisitor.ReplaceParameter(memberExpression, projection.Parameters[0], parameterSource);
+                            var assignment = Expression.Assign(targetProperty, memberExpression);
+                            expressions.Add(assignment);
+                        }
+                    }
+                }
+            }
+        }
 
+        return expressions;
+    }
+
+    private static Expression? BuildPropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty, IServiceProvider serviceProvider)
+    {
+        Expression? expression = null;
         if (targetSetProperty.PropertyType.IsAssignableFrom(sourceGetProperty.PropertyType))
         {
-            BuildAssignablePropertyContext(sourceGetProperty, targetSetProperty);
+            expression = BuildAssignablePropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty);
         }
         else if (targetSetProperty.PropertyType.IsClass && sourceGetProperty.PropertyType.IsClass && sourceGetProperty.PropertyType != typeof(string))
         {
-            BuildClassPropertyContext(sourceGetProperty, targetSetProperty);
+            expression = BuildClassPropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty, serviceProvider);
         }
         else if (targetSetProperty.PropertyType.IsConstructedGenericType && sourceGetProperty.PropertyType.IsConstructedGenericType)
         {
-            BuildGenericEnumerablePropertyContext(sourceGetProperty, targetSetProperty);
+            expression = BuildGenericEnumerablePropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty, serviceProvider);
         }
+
+        return expression;
     }
 
-    private void BuildAssignablePropertyContext(PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
+    private static Expression BuildAssignablePropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty)
     {
-
-        var parameterSource = Expression.Parameter(typeof(TSource), "sourceObject");
-        var parameterTarget = Expression.Parameter(typeof(TTarget), "targetObject");
         Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
         var targetProperty = Expression.Property(parameterTarget, targetSetProperty);
         if (sourceGetProperty.PropertyType != targetSetProperty.PropertyType)
@@ -112,36 +119,50 @@ internal class NameMatchTypeMapper<TSource, TTarget> : INameMatchTypeMapper<TSou
             sourceProperty = Expression.ConvertChecked(sourceProperty, targetSetProperty.PropertyType);
         }
         var assignment = Expression.Assign(targetProperty, sourceProperty);
-        var expression = Expression.Lambda<Action<TSource, TTarget>>(assignment, parameterSource, parameterTarget);
-        var action = expression.Compile();
 
-        _assignablePropertyContexts.Add(new AssignablePropertyContext { TargetSet = targetSetProperty, SourceGet = sourceGetProperty, SetAction = action });
+        return assignment;
     }
 
-    private void BuildClassPropertyContext(PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
+    private static Expression? BuildClassPropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty, IServiceProvider serviceProvider)
     {
+        Expression? expression = null;
         var constructor = targetSetProperty.PropertyType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, []);
         if (constructor != null)
         {
             var genericTypeMapperType = typeof(ITypeMapper<,>).MakeGenericType(sourceGetProperty.PropertyType, targetSetProperty.PropertyType);
-            var genericTypeMapper = _serviceProvider.GetService(genericTypeMapperType);
+            var genericTypeMapper = serviceProvider.GetService(genericTypeMapperType);
             if (genericTypeMapper != null)
             {
-                var method = genericTypeMapperType.GetMethod(nameof(this.Map), BindingFlags.Public | BindingFlags.Instance);
-                var context = new ClassPropertyContext
-                {
-                    TargetSet = targetSetProperty,
-                    SourceGet = sourceGetProperty,
-                    TypeMapper = genericTypeMapper,
-                    MapMethod = method!
-                };
-                _classPropertyContexts.Add(context);
+                var method = genericTypeMapperType.GetMethod(nameof(ITypeMapper<object, object>.Map), BindingFlags.Public | BindingFlags.Instance);
+
+                Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
+                Expression targetProperty = Expression.Property(parameterTarget, targetSetProperty);
+                var nullExpression = Expression.Constant(null, sourceGetProperty.PropertyType);
+
+                var newPropertyVariable = Expression.Variable(targetSetProperty.PropertyType, "newTargetValue");
+                var newPropertyType = Expression.New(targetSetProperty.PropertyType);
+                var newTargetValue = Expression.Assign(newPropertyVariable, newPropertyType);
+                var mapper = Expression.Convert(Expression.Constant(genericTypeMapper), method!.DeclaringType!);
+                var mapperMethod = Expression.Call(mapper, method, sourceProperty, newPropertyVariable);
+                var assignmentMapped = Expression.Assign(targetProperty, newPropertyVariable);
+                var blockAssignment = Expression.Block([newPropertyVariable], newTargetValue, mapperMethod, assignmentMapped);
+                var assignment = Expression.IfThenElse(
+                    Expression.Equal(sourceProperty, nullExpression),
+                    Expression.Assign(targetProperty, Expression.Constant(null, targetSetProperty.PropertyType)),
+                    blockAssignment);
+
+                expression = assignment;
             }
+
         }
+
+        return expression;
     }
 
-    private void BuildGenericEnumerablePropertyContext(PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
+    private static Expression? BuildGenericEnumerablePropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty, IServiceProvider serviceProvider)
     {
+        Expression? expression = null;
+
         var targetGenericArguments = targetSetProperty.PropertyType.GetGenericArguments();
         var listType = typeof(List<>).MakeGenericType(targetGenericArguments);
 
@@ -154,71 +175,130 @@ internal class NameMatchTypeMapper<TSource, TTarget> : INameMatchTypeMapper<TSou
             if (constructor != null)
             {
                 var genericTypeMapperType = typeof(ITypeMapper<,>).MakeGenericType(sourceGenericType, targetGenericType);
-                var propertyTypeMapper = _serviceProvider.GetService(genericTypeMapperType);
+                var genericTypeMapper = serviceProvider.GetService(genericTypeMapperType);
 
-                if (propertyTypeMapper != null)
+                if (genericTypeMapper != null)
                 {
-                    var mapMethod = genericTypeMapperType.GetMethod(nameof(this.Map));
-                    var targetGenericList = typeof(List<>).MakeGenericType(targetGenericType);
-                    var addMethod = targetGenericList.GetMethod(nameof(List<object>.Add), BindingFlags.Public | BindingFlags.Instance);
+                    var method = genericTypeMapperType.GetMethod(nameof(ITypeMapper<object, object>.Map), BindingFlags.Public | BindingFlags.Instance);
+                    var targetGenericListType = typeof(List<>).MakeGenericType(targetGenericType);
 
-                    var context = new GenericEnumerablePropertyContext
-                    {
-                        TargetSet = targetSetProperty,
-                        SourceGet = sourceGetProperty,
-                        TypeMapper = propertyTypeMapper,
-                        MapMethod = mapMethod!,
-                        TargetGenericType = targetGenericType,
-                        TargetGenericListType = targetGenericList,
-                        ListAddMethod = addMethod!
-                    };
-                    _genericEnumerablePropertyContexts.Add(context);
+                    Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
+                    Expression targetProperty = Expression.Property(parameterTarget, targetSetProperty);
+                    var nullExpression = Expression.Constant(null, sourceGetProperty.PropertyType);
+                    var mapper = Expression.Convert(Expression.Constant(genericTypeMapper), method!.DeclaringType!);
+
+                    var newPropertyList = Expression.Variable(targetGenericListType, "newTargetList");
+                    var newList = Expression.New(targetGenericListType);
+                    var newPropertyListValue = Expression.Assign(newPropertyList, newList);
+                    var listAddMethod = targetGenericListType.GetMethod(nameof(List<object>.Add), BindingFlags.Public | BindingFlags.Instance);
+
+                    var parameterLoop = Expression.Parameter(sourceGenericType);
+
+                    var newPropertyVariable = Expression.Variable(targetGenericType, "newTargetValue");
+                    var newPropertyType = Expression.New(targetGenericType);
+                    var newTargetValue = Expression.Assign(newPropertyVariable, newPropertyType);
+
+                    var mapperMethod = Expression.Call(mapper, method, parameterLoop, newPropertyVariable);
+                    var targetValueAdded = Expression.Call(newPropertyList, listAddMethod!, newPropertyVariable);
+                    var blockAdd = Expression.Block([newPropertyVariable], newTargetValue, targetValueAdded, mapperMethod);
+
+                    var foreachExpression = ForEach(sourceProperty, parameterLoop, blockAdd);
+                    var setTargetMappedValue = Expression.Assign(targetProperty, newPropertyList);
+                    var buildMappedList = Expression.Block([newPropertyList], newPropertyListValue, foreachExpression, setTargetMappedValue);
+                    var assignment = Expression.IfThenElse(
+                        Expression.Equal(sourceProperty, nullExpression),
+                        Expression.Assign(targetProperty, Expression.Constant(null, targetSetProperty.PropertyType)),
+                        buildMappedList);
+
+                    expression = assignment;
                 }
             }
         }
+
+        return expression;
     }
 
-    private static void MapClassProperty(TSource sourceObject, TTarget targetObject, ClassPropertyContext context)
+    private static Expression ForEach(Expression enumerable, ParameterExpression loopVar, Expression loopContent)
     {
-        var sourcePropertyValue = context.SourceGet.GetValue(sourceObject);
-        if (sourcePropertyValue != null)
-        {
-            var targetPropertyInstance = Activator.CreateInstance(context.TargetSet.PropertyType);
-            context.MapMethod.Invoke(context.TypeMapper, [sourcePropertyValue, targetPropertyInstance]);
+        var enumerableType = enumerable.Type;
+        var getEnumerator = enumerableType.GetMethod("GetEnumerator");
+        getEnumerator ??= enumerableType.GetInterfaces().First(x => x.GetGenericTypeDefinition() == typeof(IEnumerable<>)).GetMethod("GetEnumerator");
+        var enumeratorType = getEnumerator!.ReturnType;
+        var enumerator = Expression.Variable(enumeratorType, "enumerator");
 
-            context.TargetSet.SetValue(targetObject, targetPropertyInstance);
-        }
-        else
-        {
-            context.TargetSet.SetValue(targetObject, null);
-        }
+        return Expression.Block([enumerator],
+            Expression.Assign(enumerator, Expression.Call(enumerable, getEnumerator)),
+            EnumerationLoop(enumerator,
+                Expression.Block([loopVar],
+                    Expression.Assign(loopVar, Expression.Property(enumerator, "Current")),
+                    loopContent)));
     }
 
-    private static void MapGenericEnumerableProperty(TSource sourceObject, TTarget targetObject, GenericEnumerablePropertyContext context)
+    private static Expression EnumerationLoop(ParameterExpression enumerator, Expression loopContent)
     {
-        object? targetPropertyList = null;
-        var sourcePropertyValues = (IEnumerable?)context.SourceGet.GetValue(sourceObject);
-        if (sourcePropertyValues != null)
+        var loop = While(
+            Expression.Call(enumerator, typeof(IEnumerator).GetMethod("MoveNext")!),
+            loopContent);
+
+        var enumeratorType = enumerator.Type;
+        if (typeof(IDisposable).IsAssignableFrom(enumeratorType))
+            return Using(enumerator, loop);
+
+        if (!enumeratorType.IsValueType)
         {
-            targetPropertyList = MapSourceList(sourcePropertyValues, context);
+            var disposable = Expression.Variable(typeof(IDisposable), "disposable");
+            return Expression.TryFinally(
+                loop,
+                Expression.Block([disposable],
+                    Expression.Assign(disposable, Expression.TypeAs(enumerator, typeof(IDisposable))),
+                    Expression.IfThen(
+                        Expression.NotEqual(disposable, Expression.Constant(null)),
+                        Expression.Call(disposable, typeof(IDisposable).GetMethod("Dispose")!))));
         }
-        context.TargetSet.SetValue(targetObject, targetPropertyList);
+
+        return loop;
     }
 
-    private static object? MapSourceList(IEnumerable sourcePropertyValues, GenericEnumerablePropertyContext context)
+    private static Expression Using(ParameterExpression variable, Expression content)
     {
-        var targetPropertyList = Activator.CreateInstance(context.TargetGenericListType);
-        foreach (var sourcePropertyValue in sourcePropertyValues)
+        var variableType = variable.Type;
+
+        if (!typeof(IDisposable).IsAssignableFrom(variableType))
+            throw new Exception($"'{variableType.FullName}': type used in a using statement must be implicitly convertible to 'System.IDisposable'");
+
+        var disposeMethod = typeof(IDisposable).GetMethod("Dispose");
+
+        if (variableType.IsValueType)
         {
-            object? targetPropertyInstance = null;
-            if (sourcePropertyValue != null)
-            {
-                targetPropertyInstance = Activator.CreateInstance(context.TargetGenericType);
-                context.MapMethod.Invoke(context.TypeMapper, [sourcePropertyValue, targetPropertyInstance]);
-            }
-            context.ListAddMethod!.Invoke(targetPropertyList, [targetPropertyInstance]);
+            return Expression.TryFinally(
+                content,
+                Expression.Call(Expression.Convert(variable, typeof(IDisposable)), disposeMethod!));
         }
 
-        return targetPropertyList;
+        if (variableType.IsInterface)
+        {
+            return Expression.TryFinally(
+                content,
+                Expression.IfThen(
+                    Expression.NotEqual(variable, Expression.Constant(null)),
+                    Expression.Call(variable, disposeMethod!)));
+        }
+
+        return Expression.TryFinally(
+            content,
+            Expression.IfThen(
+                Expression.NotEqual(variable, Expression.Constant(null)),
+                Expression.Call(Expression.Convert(variable, typeof(IDisposable)), disposeMethod!)));
+    }
+
+    private static Expression While(Expression loopCondition, Expression loopContent)
+    {
+        var breakLabel = Expression.Label();
+        return Expression.Loop(
+            Expression.IfThenElse(
+                loopCondition,
+                loopContent,
+                Expression.Break(breakLabel)),
+            breakLabel);
     }
 }
