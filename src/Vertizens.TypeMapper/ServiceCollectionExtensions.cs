@@ -13,26 +13,27 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton(typeof(INameMatchTypeProjector<,>), typeof(NameMatchTypeProjector<,>));
         services.TryAddSingleton(typeof(ITypeProjector<,>), typeof(NameMatchTypeProjector<,>));
 
-        RegisterTypeMappers(services, Assembly.GetCallingAssembly());
+        RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeMapper<,>));
+        RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeProjector<,>));
 
         return services;
     }
 
-    private static void RegisterTypeMappers(IServiceCollection services, Assembly assembly)
+    private static void RegisterGenericImplementations(IServiceCollection services, Assembly assembly, Type genericType)
     {
         var allTypes = assembly.GetTypes();
-        var mapperTypes = allTypes.Select(x =>
+        var implementationTypes = allTypes.Select(x =>
             new
             {
                 Type = x,
-                MapperInterfaces = x.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ITypeMapper<,>)).ToList()
-            }).Where(x => x.MapperInterfaces.Count > 0);
+                Interfaces = x.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == genericType).ToList()
+            }).Where(x => x.Interfaces.Count > 0);
 
-        foreach (var mapperType in mapperTypes)
+        foreach (var implementationType in implementationTypes)
         {
-            foreach (var interfaceTypeMapper in mapperType.MapperInterfaces)
+            foreach (var implementationInterface in implementationType.Interfaces)
             {
-                services.TryAddSingleton(interfaceTypeMapper, mapperType.Type);
+                services.TryAddSingleton(implementationInterface, implementationType.Type);
             }
         }
     }
