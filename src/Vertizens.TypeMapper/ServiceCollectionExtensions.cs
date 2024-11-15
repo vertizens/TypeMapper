@@ -5,6 +5,10 @@ using System.Reflection;
 namespace Vertizens.TypeMapper;
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// Adds all non-abstract classes that implement <see cref="ITypeMapper{TSource, TTarget}"/>.  Uses implementation types from calling assembly.
+    /// Registers default implementation of <see cref="INameMatchTypeMapper{TSource, TTarget}"/> and <see cref="INameMatchTypeProjector{TSource, TTarget}"/>.
+    /// </summary>
     public static IServiceCollection AddTypeMappers(this IServiceCollection services)
     {
         services.TryAddSingleton<ITypeMapper, TypeMapper>();

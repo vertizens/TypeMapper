@@ -1,6 +1,6 @@
 ﻿#nullable disable
 
-namespace Vertizens.TypeMapper.Tests;
+namespace Vertizens.TypeMapper.Tests.TestTypes;
 internal class NestedParent1
 {
     public int ParentId { get; set; }

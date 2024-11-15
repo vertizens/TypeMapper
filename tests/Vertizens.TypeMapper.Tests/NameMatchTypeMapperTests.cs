@@ -53,7 +53,7 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.Name == null);
+        Assert.Null(target.Name);
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.NestedParent == null);
+        Assert.Null(target.NestedParent);
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class NameMatchTypeMapperTests
         mapper.Map(source, target);
 
         Assert.True(source.ParentId == target.ParentId);
-        Assert.True(target.Child1 != null);
+        Assert.NotNull(target.Child1);
         Assert.True(source.Child1.ChildId == target.Child1?.ChildId);
     }
 
@@ -145,7 +145,7 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.List1 == null);
+        Assert.Null(target.List1);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.List1 != null);
+        Assert.NotNull(target.List1);
         Assert.Equal(source.List1, target.List1);
     }
 
@@ -178,7 +178,7 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.List1 != null);
+        Assert.NotNull(target.List1);
         Assert.Equal(source.List1, target.List1);
     }
 
@@ -195,12 +195,12 @@ public class NameMatchTypeMapperTests
 
         mapper.Map(source, target);
 
-        Assert.True(target.List1 != null);
+        Assert.NotNull(target.List1);
 
         var sourceParent = source.List1.First();
         var targetParent = target.List1.First();
         Assert.True(sourceParent.ParentId == targetParent.ParentId);
-        Assert.True(targetParent.Child1 != null);
+        Assert.NotNull(targetParent.Child1);
         Assert.True(sourceParent.Child1.ChildId == targetParent.Child1?.ChildId);
     }
 
@@ -229,13 +229,13 @@ public class NameMatchTypeMapperTests
         stopwatch.Stop();
         _output.WriteLine($"{nameof(TestNestedListPerformance)}: {stopwatch.Elapsed.TotalMilliseconds} ns per");
 
-        Assert.True(target.List1 != null);
+        Assert.NotNull(target.List1);
 
         var sourceParent = source.List1.First();
         var targetParent = target.List1.First();
         Assert.Equal(source.List1.Count, target.List1.Count);
         Assert.True(sourceParent.ParentId == targetParent.ParentId);
-        Assert.True(targetParent.Child1 != null);
+        Assert.NotNull(targetParent.Child1);
         Assert.True(sourceParent.Child1.ChildId == targetParent.Child1?.ChildId);
     }
 

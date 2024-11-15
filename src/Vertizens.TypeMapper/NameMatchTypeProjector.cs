@@ -58,7 +58,7 @@ internal class NameMatchTypeProjector<TSource, TTarget>(
         return memberBinding;
     }
 
-    private static MemberBinding BuildAssignablePropertyBinding(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
+    private static MemberAssignment BuildAssignablePropertyBinding(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty)
     {
         Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
         if (sourceGetProperty.PropertyType != targetSetProperty.PropertyType)

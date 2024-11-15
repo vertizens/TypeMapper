@@ -110,7 +110,7 @@ internal class NameMatchTypeMapper<TSource, TTarget>(
         return expression;
     }
 
-    private static Expression BuildAssignablePropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty)
+    private static BinaryExpression BuildAssignablePropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty)
     {
         Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
         var targetProperty = Expression.Property(parameterTarget, targetSetProperty);
@@ -218,7 +218,7 @@ internal class NameMatchTypeMapper<TSource, TTarget>(
         return expression;
     }
 
-    private static Expression ForEach(Expression enumerable, ParameterExpression loopVar, Expression loopContent)
+    private static BlockExpression ForEach(Expression enumerable, ParameterExpression loopVar, Expression loopContent)
     {
         var enumerableType = enumerable.Type;
         var getEnumerator = enumerableType.GetMethod("GetEnumerator");
@@ -259,7 +259,7 @@ internal class NameMatchTypeMapper<TSource, TTarget>(
         return loop;
     }
 
-    private static Expression Using(ParameterExpression variable, Expression content)
+    private static TryExpression Using(ParameterExpression variable, Expression content)
     {
         var variableType = variable.Type;
 
@@ -291,7 +291,7 @@ internal class NameMatchTypeMapper<TSource, TTarget>(
                 Expression.Call(Expression.Convert(variable, typeof(IDisposable)), disposeMethod!)));
     }
 
-    private static Expression While(Expression loopCondition, Expression loopContent)
+    private static LoopExpression While(Expression loopCondition, Expression loopContent)
     {
         var breakLabel = Expression.Label();
         return Expression.Loop(
