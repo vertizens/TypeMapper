@@ -1,4 +1,8 @@
 ﻿namespace Vertizens.TypeMapper;
+
+/// <summary>
+/// Maps source property values onto target instance properties by getting <see cref="ITypeMapper{TSource, TTarget}"/> instance
+/// </summary>
 public interface ITypeMapper
 {
     /// <summary>
@@ -6,7 +10,7 @@ public interface ITypeMapper
     /// </summary>
     /// <typeparam name="TSource">Type of source object to map from</typeparam>
     /// <typeparam name="TTarget">Type of target object to map to</typeparam>
-    /// <param name="source"source object></param>
+    /// <param name="source">source object</param>
     /// <returns></returns>
     TTarget Map<TSource, TTarget>(TSource source) where TTarget : class, new();
     /// <summary>

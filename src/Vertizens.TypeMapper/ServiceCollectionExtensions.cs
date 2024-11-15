@@ -3,6 +3,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using System.Reflection;
 
 namespace Vertizens.TypeMapper;
+
+/// <summary>
+/// Extensions to register services
+/// </summary>
 public static class ServiceCollectionExtensions
 {
     /// <summary>

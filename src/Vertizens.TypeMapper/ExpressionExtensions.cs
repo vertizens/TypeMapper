@@ -1,6 +1,10 @@
 ﻿using System.Linq.Expressions;
 
 namespace Vertizens.TypeMapper;
+
+/// <summary>
+/// Expression extensions
+/// </summary>
 public static class ExpressionExtensions
 {
     /// <summary>
@@ -9,7 +13,7 @@ public static class ExpressionExtensions
     /// <typeparam name="TSource">Type of source object to project from</typeparam>
     /// <typeparam name="TTarget">Type of target object to project to</typeparam>
     /// <param name="projection1">Default projection to use to create one projection from</param>
-    /// <param name="projection2">Override projection to use to create one projection from<</param>
+    /// <param name="projection2">Override projection to use to create one projection from</param>
     /// <returns>Combined Projection</returns>
     /// <exception cref="ArgumentException">If either projection is not defined as MemberInit expression nodes and only define member bindings only</exception>
     public static Expression<Func<TSource, TTarget>> Union<TSource, TTarget>(this Expression<Func<TSource, TTarget>> projection1, Expression<Func<TSource, TTarget>> projection2)
