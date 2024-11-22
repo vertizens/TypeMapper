@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 
 namespace Vertizens.TypeMapper;
-internal class TypeMapper(IServiceProvider _serviceProvider) : ITypeMapper
+internal class DefaultTypeMapper(IServiceProvider _serviceProvider) : ITypeMapper
 {
     public TTarget Map<TSource, TTarget>(TSource source) where TTarget : class, new()
     {

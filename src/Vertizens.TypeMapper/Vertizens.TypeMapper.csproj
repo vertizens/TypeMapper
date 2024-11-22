@@ -28,6 +28,7 @@
 	<ItemGroup>
 		<None Include="..\..\README.md" Pack="true" PackagePath="\" />
 		<None Include="..\..\icon.png" Pack="true" PackagePath="\" />
+		<InternalsVisibleTo Include="Vertizens.TypeMapper.Tests"/>
 	</ItemGroup>
 
 </Project>

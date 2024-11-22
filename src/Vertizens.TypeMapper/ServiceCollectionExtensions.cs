@@ -11,15 +11,16 @@ public static class ServiceCollectionExtensions
 {
     /// <summary>
     /// Adds all non-abstract classes that implement <see cref="ITypeMapper{TSource, TTarget}"/>.  Uses implementation types from calling assembly.
-    /// Registers default implementation of <see cref="INameMatchTypeMapper{TSource, TTarget}"/> and <see cref="INameMatchTypeProjector{TSource, TTarget}"/>.
+    /// Registers default implementation of <see cref="DefaultTypeMapper{TSource, TTarget}"/> and <see cref="DefaultTypeProjector{TSource, TTarget}"/>.
     /// </summary>
     public static IServiceCollection AddTypeMappers(this IServiceCollection services)
     {
-        services.TryAddSingleton<ITypeMapper, TypeMapper>();
-        services.TryAddSingleton(typeof(INameMatchTypeMapper<,>), typeof(NameMatchTypeMapper<,>));
-        services.TryAddSingleton(typeof(ITypeMapper<,>), typeof(NameMatchTypeMapper<,>));
-        services.TryAddSingleton(typeof(INameMatchTypeProjector<,>), typeof(NameMatchTypeProjector<,>));
-        services.TryAddSingleton(typeof(ITypeProjector<,>), typeof(NameMatchTypeProjector<,>));
+        services.TryAddSingleton(typeof(ITypeProjector<,>), typeof(DefaultTypeProjector<,>));
+        services.TryAddSingleton(typeof(ITypeProjectorExpressionBuilder<,>), typeof(DefaultTypeProjectorExpressionBuilder<,>));
+        services.TryAddSingleton<ITypeMapper, DefaultTypeMapper>();
+        services.TryAddSingleton(typeof(ITypeMapper<,>), typeof(DefaultTypeMapper<,>));
+        services.TryAddSingleton(typeof(ITypeMapperBuilder<,>), typeof(DefaultTypeMapperBuilder<,>));
+        services.TryAddTransient(typeof(ITypeMapperExpressionBuilder<,>), typeof(DefaultTypeMapperExpressionBuilder<,>));
 
         RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeMapper<,>));
         RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeProjector<,>));

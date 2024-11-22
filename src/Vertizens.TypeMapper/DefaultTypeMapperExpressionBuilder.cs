@@ -1,94 +1,62 @@
-﻿using Microsoft.Extensions.DependencyInjection;
-using System.Collections;
+﻿using System.Collections;
 using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Vertizens.TypeMapper;
-internal class NameMatchTypeMapper<TSource, TTarget>(
-    IServiceProvider serviceProvider
-    ) : INameMatchTypeMapper<TSource, TTarget>
+internal class DefaultTypeMapperExpressionBuilder<TSource, TTarget>(
+    IServiceProvider _serviceProvider
+    ) : ITypeMapperExpressionBuilder<TSource, TTarget>
 {
-    private readonly Action<TSource, TTarget> _action = BuildAction(serviceProvider);
+    private readonly ParameterExpression parameterSource = Expression.Parameter(typeof(TSource), "source");
+    private readonly ParameterExpression parameterTarget = Expression.Parameter(typeof(TTarget), "target");
+    private readonly IList<Expression> _expressions = [];
 
-    public void Map(TSource sourceObject, TTarget targetObject)
+    public ITypeMapperExpressionBuilder<TSource, TTarget> Map<T>(Expression<Func<TTarget, T>> propertySelector, Expression<Func<TSource, T>> valueSelector)
     {
-        if (sourceObject == null)
-        {
-            throw new ArgumentNullException(nameof(sourceObject));
-        }
+        var propertyExpression = ReplaceParameterExpressionVisitor.ReplaceParameter(propertySelector.Body, propertySelector.Parameters[0], parameterTarget);
+        var valueExpression = ReplaceParameterExpressionVisitor.ReplaceParameter(valueSelector.Body, valueSelector.Parameters[0], parameterSource);
+        var propertyAssignment = Expression.Assign(propertyExpression, valueExpression);
+        _expressions.Add(propertyAssignment);
 
-        if (targetObject == null)
-        {
-            throw new ArgumentNullException(nameof(targetObject));
-        }
-
-        _action(sourceObject, targetObject);
+        return this;
     }
 
-    private static Action<TSource, TTarget> BuildAction(IServiceProvider serviceProvider)
+    //public ITypeMapperExpressionBuilder<TSource, TTarget> Map<TProperty, TMappedProperty>(Expression<Func<TTarget, TProperty>> propertySelector, Expression<Func<TSource, TMappedProperty>> valueSelector)
+    //    where TProperty : class
+    //    where TMappedProperty : class
+    //{
+    //    throw new NotImplementedException();
+    //    //    var propertyExpressionBuilder = new DefaultTypeMapperExpressionBuilder<TMappedProperty, TProperty>(_serviceProvider);
+    //    //    var mapperBuilder = _serviceProvider.GetRequiredService<ITypeMapperBuilder<TMappedProperty, TProperty>>();
+    //    //    mapperBuilder.Build(propertyExpressionBuilder);
+
+    //    //    return this;
+    //}
+
+    public ITypeMapperExpressionBuilder<TSource, TTarget> ApplyNameMatch()
     {
-        var projectorExpressionsMethod = typeof(NameMatchTypeMapper<TSource, TTarget>).GetMethod(nameof(GetProjectorExpressions), BindingFlags.NonPublic | BindingFlags.Static);
-        projectorExpressionsMethod = projectorExpressionsMethod!.MakeGenericMethod(typeof(TSource), typeof(TTarget));
+        var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
+        var targetSetProperties = typeof(TTarget).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.SetMethod?.IsPublic == true).ToDictionary(x => x.Name);
 
-        var parameterSource = Expression.Parameter(typeof(TSource), "source");
-        var parameterTarget = Expression.Parameter(typeof(TTarget), "target");
-        var expressions = (IList<Expression>?)projectorExpressionsMethod!.Invoke(null, [parameterSource, parameterTarget, serviceProvider]);
-
-        if (expressions == null)
+        foreach (var sourceGetProperty in sourceGetProperties)
         {
-            var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
-            var targetSetProperties = typeof(TTarget).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.SetMethod?.IsPublic == true).ToDictionary(x => x.Name);
-
-            expressions = [];
-            foreach (var sourceGetProperty in sourceGetProperties)
+            if (targetSetProperties.TryGetValue(sourceGetProperty.Name, out var targetSetProperty))
             {
-                if (targetSetProperties.TryGetValue(sourceGetProperty.Name, out var targetSetProperty))
+                var propertyExpression = BuildPropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty, _serviceProvider);
+                if (propertyExpression != null)
                 {
-                    var propertyExpression = BuildPropertyAssignment(parameterSource, sourceGetProperty, parameterTarget, targetSetProperty, serviceProvider);
-                    if (propertyExpression != null)
-                    {
-                        expressions.Add(propertyExpression);
-                    }
+                    _expressions.Add(propertyExpression);
                 }
             }
         }
 
-        var allPropertyExpressions = Expression.Block(expressions);
-        var expression = Expression.Lambda<Action<TSource, TTarget>>(allPropertyExpressions, parameterSource, parameterTarget);
-        return expression.Compile();
+        return this;
     }
 
-    private static IList<Expression>? GetProjectorExpressions<TProjectorSource, TProjectorTarget>(ParameterExpression parameterSource, ParameterExpression parameterTarget, IServiceProvider serviceProvider)
-        where TProjectorTarget : class, new()
+    public Expression<Action<TSource, TTarget>> Build()
     {
-        IList<Expression>? expressions = null;
-        var constructor = typeof(TTarget).GetConstructor(BindingFlags.Public | BindingFlags.Instance, []);
-        if (constructor != null)
-        {
-            var typeProjector = serviceProvider.GetService<ITypeProjector<TProjectorSource, TProjectorTarget>>();
-            if (typeProjector != null)
-            {
-                var projection = typeProjector.GetProjection();
-                if (projection.Body.NodeType == ExpressionType.MemberInit)
-                {
-                    expressions = [];
-                    var bindings = ((MemberInitExpression)projection.Body).Bindings;
-                    foreach (var binding in bindings)
-                    {
-                        var targetProperty = Expression.MakeMemberAccess(parameterTarget, binding.Member);
-                        if (binding.BindingType == MemberBindingType.Assignment)
-                        {
-                            var memberExpression = ((MemberAssignment)binding).Expression;
-                            memberExpression = ReplaceParameterExpressionVisitor.ReplaceParameter(memberExpression, projection.Parameters[0], parameterSource);
-                            var assignment = Expression.Assign(targetProperty, memberExpression);
-                            expressions.Add(assignment);
-                        }
-                    }
-                }
-            }
-        }
-
-        return expressions;
+        var allPropertyExpressions = Expression.Block(_expressions);
+        return Expression.Lambda<Action<TSource, TTarget>>(allPropertyExpressions, parameterSource, parameterTarget);
     }
 
     private static Expression? BuildPropertyAssignment(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, ParameterExpression parameterTarget, PropertyInfo targetSetProperty, IServiceProvider serviceProvider)

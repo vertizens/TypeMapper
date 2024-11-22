@@ -3,18 +3,58 @@ using System.Linq.Expressions;
 using System.Reflection;
 
 namespace Vertizens.TypeMapper;
-internal class NameMatchTypeProjector<TSource, TTarget>(
-    IServiceProvider serviceProvider
-    ) : INameMatchTypeProjector<TSource, TTarget> where TTarget : class, new()
+internal class DefaultTypeProjectorExpressionBuilder<TSource, TTarget>(
+    IServiceProvider _serviceProvider
+    ) : ITypeProjectorExpressionBuilder<TSource, TTarget> where TTarget : class, new()
 {
-    private readonly Expression<Func<TSource, TTarget>> _expression = BuildExpression(serviceProvider);
+    private Expression<Func<TSource, TTarget>> _projection = x => new TTarget();
 
-    public Expression<Func<TSource, TTarget>> GetProjection()
+    public ITypeProjectorExpressionBuilder<TSource, TTarget> Union(Expression<Func<TSource, TTarget>> projection)
     {
-        return _expression;
+        if (_projection.Body.NodeType == ExpressionType.New)
+        {
+            _projection = projection;
+        }
+        else if (_projection.Body.NodeType == ExpressionType.MemberInit && projection.Body.NodeType == ExpressionType.MemberInit)
+        {
+            var bindings1 = ((MemberInitExpression)_projection.Body).Bindings;
+            var bindings2 = ((MemberInitExpression)projection.Body).Bindings;
+            if (bindings1.All(x => x.BindingType == MemberBindingType.Assignment) && bindings2.All(x => x.BindingType == MemberBindingType.Assignment))
+            {
+                var projection2ReplacedBody = ReplaceParameterExpressionVisitor.ReplaceParameter(projection.Body, projection.Parameters[0], projection.Parameters[0]);
+                var bindingsByMember1 = bindings1.ToDictionary(x => x.Member, x => (MemberAssignment)x);
+                IList<MemberAssignment> newAssignments = [];
+                foreach (var binding in ((MemberInitExpression)projection2ReplacedBody).Bindings)
+                {
+                    if (bindingsByMember1.TryGetValue(binding.Member, out var existingBinding))
+                    {
+                        bindingsByMember1[binding.Member] = (MemberAssignment)binding;
+                    }
+                    else
+                    {
+                        newAssignments.Add((MemberAssignment)binding);
+                    }
+                }
+
+                var allMemberAssignments = bindingsByMember1.Values.Concat(newAssignments);
+                var memberInit = Expression.MemberInit(Expression.New(typeof(TTarget)), allMemberAssignments);
+
+                _projection = Expression.Lambda<Func<TSource, TTarget>>(memberInit, _projection.Parameters);
+            }
+            else
+            {
+                throw new ArgumentException("Both body expressions must use Assignment member bindings only");
+            }
+        }
+        else
+        {
+            throw new ArgumentException("Both body expressions need to be MemberInit nodes");
+        }
+
+        return this;
     }
 
-    private static Expression<Func<TSource, TTarget>> BuildExpression(IServiceProvider serviceProvider)
+    public ITypeProjectorExpressionBuilder<TSource, TTarget> ApplyNameMatch()
     {
         var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
         var targetSetProperties = typeof(TTarget).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.SetMethod?.IsPublic == true).ToDictionary(x => x.Name);
@@ -25,7 +65,7 @@ internal class NameMatchTypeProjector<TSource, TTarget>(
         {
             if (targetSetProperties.TryGetValue(sourceGetProperty.Name, out var targetSetProperty))
             {
-                var memberBinding = BuildPropertyBinding(parameterSource, sourceGetProperty, targetSetProperty, serviceProvider);
+                var memberBinding = BuildPropertyBinding(parameterSource, sourceGetProperty, targetSetProperty, _serviceProvider);
                 if (memberBinding != null)
                 {
                     memberBindings.Add(memberBinding);
@@ -36,7 +76,14 @@ internal class NameMatchTypeProjector<TSource, TTarget>(
         var newTarget = Expression.New(typeof(TTarget));
         var body = Expression.MemberInit(newTarget, memberBindings);
 
-        return Expression.Lambda<Func<TSource, TTarget>>(body, parameterSource);
+        Union(Expression.Lambda<Func<TSource, TTarget>>(body, parameterSource));
+
+        return this;
+    }
+
+    public Expression<Func<TSource, TTarget>> Build()
+    {
+        return _projection;
     }
 
     private static MemberBinding? BuildPropertyBinding(ParameterExpression parameterSource, PropertyInfo sourceGetProperty, PropertyInfo targetSetProperty, IServiceProvider serviceProvider)
