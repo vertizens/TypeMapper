@@ -17,11 +17,13 @@ internal class DefaultTypeProjectorExpressionBuilder<TSource, TTarget>(
         }
         else if (_projection.Body.NodeType == ExpressionType.MemberInit && projection.Body.NodeType == ExpressionType.MemberInit)
         {
-            var bindings1 = ((MemberInitExpression)_projection.Body).Bindings;
-            var bindings2 = ((MemberInitExpression)projection.Body).Bindings;
+            var projection1 = _projection;
+            var projection2 = projection;
+            var bindings1 = ((MemberInitExpression)projection1.Body).Bindings;
+            var bindings2 = ((MemberInitExpression)projection2.Body).Bindings;
             if (bindings1.All(x => x.BindingType == MemberBindingType.Assignment) && bindings2.All(x => x.BindingType == MemberBindingType.Assignment))
             {
-                var projection2ReplacedBody = ReplaceParameterExpressionVisitor.ReplaceParameter(projection.Body, projection.Parameters[0], projection.Parameters[0]);
+                var projection2ReplacedBody = ReplaceParameterExpressionVisitor.ReplaceParameter(projection.Body, projection2.Parameters[0], projection1.Parameters[0]);
                 var bindingsByMember1 = bindings1.ToDictionary(x => x.Member, x => (MemberAssignment)x);
                 IList<MemberAssignment> newAssignments = [];
                 foreach (var binding in ((MemberInitExpression)projection2ReplacedBody).Bindings)

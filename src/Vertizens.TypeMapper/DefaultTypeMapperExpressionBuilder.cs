@@ -21,18 +21,6 @@ internal class DefaultTypeMapperExpressionBuilder<TSource, TTarget>(
         return this;
     }
 
-    //public ITypeMapperExpressionBuilder<TSource, TTarget> Map<TProperty, TMappedProperty>(Expression<Func<TTarget, TProperty>> propertySelector, Expression<Func<TSource, TMappedProperty>> valueSelector)
-    //    where TProperty : class
-    //    where TMappedProperty : class
-    //{
-    //    throw new NotImplementedException();
-    //    //    var propertyExpressionBuilder = new DefaultTypeMapperExpressionBuilder<TMappedProperty, TProperty>(_serviceProvider);
-    //    //    var mapperBuilder = _serviceProvider.GetRequiredService<ITypeMapperBuilder<TMappedProperty, TProperty>>();
-    //    //    mapperBuilder.Build(propertyExpressionBuilder);
-
-    //    //    return this;
-    //}
-
     public ITypeMapperExpressionBuilder<TSource, TTarget> ApplyNameMatch()
     {
         var sourceGetProperties = typeof(TSource).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(x => x.GetMethod?.IsPublic == true);
