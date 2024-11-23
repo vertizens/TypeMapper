@@ -16,13 +16,13 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddTypeMappers(this IServiceCollection services)
     {
         services.TryAddSingleton(typeof(ITypeProjector<,>), typeof(DefaultTypeProjector<,>));
-        services.TryAddSingleton(typeof(ITypeProjectorExpressionBuilder<,>), typeof(DefaultTypeProjectorExpressionBuilder<,>));
+        services.TryAddTransient(typeof(ITypeProjectorExpressionBuilder<,>), typeof(DefaultTypeProjectorExpressionBuilder<,>));
         services.TryAddSingleton<ITypeMapper, DefaultTypeMapper>();
         services.TryAddSingleton(typeof(ITypeMapper<,>), typeof(DefaultTypeMapper<,>));
         services.TryAddSingleton(typeof(ITypeMapperBuilder<,>), typeof(DefaultTypeMapperBuilder<,>));
         services.TryAddTransient(typeof(ITypeMapperExpressionBuilder<,>), typeof(DefaultTypeMapperExpressionBuilder<,>));
 
-        RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeMapper<,>));
+        RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeMapperBuilder<,>));
         RegisterGenericImplementations(services, Assembly.GetCallingAssembly(), typeof(ITypeProjector<,>));
 
         return services;
