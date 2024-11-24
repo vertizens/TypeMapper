@@ -85,23 +85,34 @@ internal class DefaultTypeMapperExpressionBuilder<TSource, TTarget>(
         var constructor = targetSetProperty.PropertyType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, []);
         if (constructor != null)
         {
-            var genericTypeMapperType = typeof(ITypeMapper<,>).MakeGenericType(sourceGetProperty.PropertyType, targetSetProperty.PropertyType);
-            var genericTypeMapper = serviceProvider.GetService(genericTypeMapperType);
-            if (genericTypeMapper != null)
+            var genericTypeMapperBuilderType = typeof(ITypeMapperBuilder<,>).MakeGenericType(sourceGetProperty.PropertyType, targetSetProperty.PropertyType);
+            var genericTypeMapperBuilder = serviceProvider.GetService(genericTypeMapperBuilderType);
+            var genericTypeMapperExpressionBuilderType = typeof(ITypeMapperExpressionBuilder<,>).MakeGenericType(sourceGetProperty.PropertyType, targetSetProperty.PropertyType);
+            var genericTypeMapperExpressionBuilder = serviceProvider.GetService(genericTypeMapperExpressionBuilderType);
+            if (genericTypeMapperBuilder != null && genericTypeMapperExpressionBuilder != null)
             {
-                var method = genericTypeMapperType.GetMethod(nameof(ITypeMapper<object, object>.Map), BindingFlags.Public | BindingFlags.Instance);
+                var method = genericTypeMapperBuilderType.GetMethod(nameof(ITypeMapperBuilder<object, object>.Build), BindingFlags.Public | BindingFlags.Instance);
+                method!.Invoke(genericTypeMapperBuilder, [genericTypeMapperExpressionBuilder]);
+
+                method = genericTypeMapperExpressionBuilderType.GetMethod(nameof(ITypeMapperExpressionBuilder<object, object>.Build), BindingFlags.Public | BindingFlags.Instance);
+                var mapperExpression = (LambdaExpression?)method!.Invoke(genericTypeMapperExpressionBuilder, []);
 
                 Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
                 Expression targetProperty = Expression.Property(parameterTarget, targetSetProperty);
                 var nullExpression = Expression.Constant(null, sourceGetProperty.PropertyType);
 
-                var newPropertyVariable = Expression.Variable(targetSetProperty.PropertyType, "newTargetValue");
-                var newPropertyType = Expression.New(targetSetProperty.PropertyType);
-                var newTargetValue = Expression.Assign(newPropertyVariable, newPropertyType);
-                var mapper = Expression.Convert(Expression.Constant(genericTypeMapper), method!.DeclaringType!);
-                var mapperMethod = Expression.Call(mapper, method, sourceProperty, newPropertyVariable);
-                var assignmentMapped = Expression.Assign(targetProperty, newPropertyVariable);
-                var blockAssignment = Expression.Block([newPropertyVariable], newTargetValue, mapperMethod, assignmentMapped);
+                var sourcePropertyVariable = Expression.Variable(sourceGetProperty.PropertyType, "sourceValue");
+                var sourceValue = Expression.Assign(sourcePropertyVariable, sourceProperty);
+
+                var newTargetVariable = Expression.Variable(targetSetProperty.PropertyType, "newTargetValue");
+                var newTargetProperty = Expression.New(targetSetProperty.PropertyType);
+                var newTargetValue = Expression.Assign(newTargetVariable, newTargetProperty);
+
+                mapperExpression = (LambdaExpression)ReplaceParameterExpressionVisitor.ReplaceParameter(mapperExpression!, mapperExpression!.Parameters[0], sourcePropertyVariable);
+                mapperExpression = (LambdaExpression)ReplaceParameterExpressionVisitor.ReplaceParameter(mapperExpression!, mapperExpression!.Parameters[1], newTargetVariable);
+
+                var assignmentMapped = Expression.Assign(targetProperty, newTargetVariable);
+                var blockAssignment = Expression.Block([newTargetVariable, sourcePropertyVariable], sourceValue, newTargetValue, mapperExpression.Body, assignmentMapped);
                 var assignment = Expression.IfThenElse(
                     Expression.Equal(sourceProperty, nullExpression),
                     Expression.Assign(targetProperty, Expression.Constant(null, targetSetProperty.PropertyType)),
@@ -130,18 +141,23 @@ internal class DefaultTypeMapperExpressionBuilder<TSource, TTarget>(
             var constructor = targetGenericType.GetConstructor(BindingFlags.Public | BindingFlags.Instance, []);
             if (constructor != null)
             {
-                var genericTypeMapperType = typeof(ITypeMapper<,>).MakeGenericType(sourceGenericType, targetGenericType);
-                var genericTypeMapper = serviceProvider.GetService(genericTypeMapperType);
-
-                if (genericTypeMapper != null)
+                var genericTypeMapperBuilderType = typeof(ITypeMapperBuilder<,>).MakeGenericType(sourceGenericType, targetGenericType);
+                var genericTypeMapperBuilder = serviceProvider.GetService(genericTypeMapperBuilderType);
+                var genericTypeMapperExpressionBuilderType = typeof(ITypeMapperExpressionBuilder<,>).MakeGenericType(sourceGenericType, targetGenericType);
+                var genericTypeMapperExpressionBuilder = serviceProvider.GetService(genericTypeMapperExpressionBuilderType);
+                if (genericTypeMapperBuilder != null && genericTypeMapperExpressionBuilder != null)
                 {
-                    var method = genericTypeMapperType.GetMethod(nameof(ITypeMapper<object, object>.Map), BindingFlags.Public | BindingFlags.Instance);
+                    var method = genericTypeMapperBuilderType.GetMethod(nameof(ITypeMapperBuilder<object, object>.Build), BindingFlags.Public | BindingFlags.Instance);
+                    method!.Invoke(genericTypeMapperBuilder, [genericTypeMapperExpressionBuilder]);
+
+                    method = genericTypeMapperExpressionBuilderType.GetMethod(nameof(ITypeMapperExpressionBuilder<object, object>.Build), BindingFlags.Public | BindingFlags.Instance);
+                    var mapperExpression = (LambdaExpression?)method!.Invoke(genericTypeMapperExpressionBuilder, []);
+
                     var targetGenericListType = typeof(List<>).MakeGenericType(targetGenericType);
 
                     Expression sourceProperty = Expression.Property(parameterSource, sourceGetProperty);
                     Expression targetProperty = Expression.Property(parameterTarget, targetSetProperty);
                     var nullExpression = Expression.Constant(null, sourceGetProperty.PropertyType);
-                    var mapper = Expression.Convert(Expression.Constant(genericTypeMapper), method!.DeclaringType!);
 
                     var newPropertyList = Expression.Variable(targetGenericListType, "newTargetList");
                     var newList = Expression.New(targetGenericListType);
@@ -150,13 +166,15 @@ internal class DefaultTypeMapperExpressionBuilder<TSource, TTarget>(
 
                     var parameterLoop = Expression.Parameter(sourceGenericType);
 
-                    var newPropertyVariable = Expression.Variable(targetGenericType, "newTargetValue");
-                    var newPropertyType = Expression.New(targetGenericType);
-                    var newTargetValue = Expression.Assign(newPropertyVariable, newPropertyType);
+                    var newTargetVariable = Expression.Variable(targetGenericType, "newTargetValue");
+                    var newTargetProperty = Expression.New(targetGenericType);
+                    var newTargetValue = Expression.Assign(newTargetVariable, newTargetProperty);
 
-                    var mapperMethod = Expression.Call(mapper, method, parameterLoop, newPropertyVariable);
-                    var targetValueAdded = Expression.Call(newPropertyList, listAddMethod!, newPropertyVariable);
-                    var blockAdd = Expression.Block([newPropertyVariable], newTargetValue, targetValueAdded, mapperMethod);
+                    mapperExpression = (LambdaExpression)ReplaceParameterExpressionVisitor.ReplaceParameter(mapperExpression!, mapperExpression!.Parameters[0], parameterLoop);
+                    mapperExpression = (LambdaExpression)ReplaceParameterExpressionVisitor.ReplaceParameter(mapperExpression!, mapperExpression!.Parameters[1], newTargetVariable);
+
+                    var targetValueAdded = Expression.Call(newPropertyList, listAddMethod!, newTargetVariable);
+                    var blockAdd = Expression.Block([newTargetVariable], newTargetValue, mapperExpression.Body, targetValueAdded);
 
                     var foreachExpression = ForEach(sourceProperty, parameterLoop, blockAdd);
                     var setTargetMappedValue = Expression.Assign(targetProperty, newPropertyList);
