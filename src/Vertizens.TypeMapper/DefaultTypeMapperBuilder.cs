@@ -44,9 +44,9 @@ internal class DefaultTypeMapperBuilder<TSource, TTarget>(
                 var bindings = ((MemberInitExpression)projection.Body).Bindings;
                 foreach (var binding in bindings)
                 {
-                    var targetProperty = Expression.MakeMemberAccess(parameterTarget, binding.Member);
                     if (binding.BindingType == MemberBindingType.Assignment)
                     {
+                        var targetProperty = Expression.MakeMemberAccess(parameterTarget, binding.Member);
                         var memberExpression = ((MemberAssignment)binding).Expression;
                         memberExpression = ReplaceParameterExpressionVisitor.ReplaceParameter(memberExpression, projection.Parameters[0], parameterSource);
                         var expressionBuilderMapMethod = typeof(DefaultTypeMapperBuilder<TProjectorSource, TProjectorTarget>).GetMethod(nameof(ExpressionBuilderMap), BindingFlags.NonPublic | BindingFlags.Static);

@@ -1,11 +1,10 @@
 ﻿namespace Vertizens.TypeMapper;
 internal class DefaultTypeMapper<TSource, TTarget>(
-    IServiceProvider _serviceProvider,
     ITypeMapperExpressionBuilder<TSource, TTarget> _typeMapperExpressionBuilder,
     ITypeMapperBuilder<TSource, TTarget> _typeMapperBuilder
     ) : ITypeMapper<TSource, TTarget>
 {
-    private readonly Action<TSource, TTarget> _action = BuildAction(_serviceProvider, _typeMapperExpressionBuilder, _typeMapperBuilder);
+    private readonly Action<TSource, TTarget> _action = BuildAction(_typeMapperExpressionBuilder, _typeMapperBuilder);
 
     public void Map(TSource sourceObject, TTarget targetObject)
     {
@@ -23,7 +22,6 @@ internal class DefaultTypeMapper<TSource, TTarget>(
     }
 
     private static Action<TSource, TTarget> BuildAction(
-        IServiceProvider serviceProvider,
         ITypeMapperExpressionBuilder<TSource, TTarget> expressionBuilder,
         ITypeMapperBuilder<TSource, TTarget> typeMapperBuilder)
     {
